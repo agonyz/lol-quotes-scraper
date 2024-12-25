@@ -14,5 +14,14 @@ services:
       - database_data:/var/lib/postgresql/data
       - ./docker/database:/docker-entrypoint-initdb.d
 
+  scraper:
+    build:
+      context: .
+      dockerfile: docker/scraper/Dockerfile
+    depends_on:
+      - database
+    environment:
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASSWORD}@database:${DB_PORT}/${DB_DATABASE}
+
 volumes:
   database_data:

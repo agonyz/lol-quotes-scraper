@@ -1,0 +1,27 @@
+{
+  "name": "lol-quotes-scraper",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "scraper:start": "npx ts-node src/index.ts",
+    "db:test": "npx ts-node src/dbConnectionTest.ts"
+  },
+  "keywords": [],
+  "author": "Frank Ficzak <dev@agonyz.de> (https://www.agonyz.de/)",
+  "license": "MIT",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "cheerio": "^1.0.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/cheerio": "^0.22.35",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "prettier": "^3.4.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}
