@@ -10,6 +10,7 @@ RUN npm install
 COPY --chown=node:node ./packages/scraper .
 COPY --chown=node:node .env .
 
-CMD ["npm", "run", "scraper:start"]
+# list commands
+CMD ["npm", "run"]
 
 
