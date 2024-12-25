@@ -5,7 +5,7 @@
   "scripts": {
     "build": "tsc",
     "scraper:start": "npx ts-node src/index.ts",
-    "db:test": "npx ts-node src/dbConnectionTest.ts"
+    "db:test": "npx ts-node src/utils/dbConnectionTest.ts"
   },
   "keywords": [],
   "author": "Frank Ficzak <dev@agonyz.de> (https://www.agonyz.de/)",

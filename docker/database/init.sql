@@ -6,5 +6,5 @@ CREATE TABLE IF NOT EXISTS champions (
 CREATE TABLE IF NOT EXISTS quotes (
     id SERIAL PRIMARY KEY,
     champion_id INT REFERENCES champions(id) ON DELETE CASCADE,
-    quote TEXT NOT NULL
+    quote TEXT NOT NULL UNIQUE
 );
