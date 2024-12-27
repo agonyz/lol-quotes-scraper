@@ -4,3 +4,4 @@
 .env
 .idea
 var/
+dumps/*.sql
