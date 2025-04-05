@@ -13,6 +13,7 @@ const scrapeChampions = async () => {
     await saveChampionsToDB(champions);
     const championsFromDB = await getChampionsFromDB();
     await scrapeAndSaveQuotes(championsFromDB);
+
     console.log('Scraping completed and data saved to the database.');
   } catch (error) {
     console.error('Error during scraping:', error);
@@ -86,22 +87,97 @@ const scrapeChampionQuotes = async (champion: Champion) => {
     const { data } = await axios.get(championAudioUrl);
     const $ = cheerio.load(data);
 
-    // only gather the pick quote for now
-    // looks a bit complicated, but would otherwise not work due to quotes like kindred's
-    const quoteElement = $('ul li i').eq(1).parent();
-    let quoteText = '';
-    quoteElement.children().each((i, e) => {
-      const tagName = $(e).get(0).tagName.toLowerCase();
-      if (tagName === 'sup') return;
+    const results: {
+      pick?: string;
+      ban?: string;
+      joke?: string[];
+      taunt?: string[];
+    } = {};
 
-      if (i > 0) {
-        let text = $(e).text().trim();
-        quoteText += text + ' ';
+    // scrape the pick and ban quotes (may contain duplicates see trundle and talon for example)
+    $('dl').each((i, dl) => {
+      const title = $(dl).find('dt').first().text().trim();
+
+      if (title === 'Pick') {
+        const ul = $(dl).nextAll('ul').first();
+        const quoteElement = ul.find('li i').eq(1).parent();
+
+        let quoteText = '';
+        quoteElement.children().each((i, e) => {
+          const tagName = $(e).get(0).tagName.toLowerCase();
+          if (tagName === 'sup') return;
+
+          if (i > 0) {
+            let text = $(e).text().trim();
+            quoteText += text + ' ';
+          }
+        });
+
+        results.pick = quoteText.trim().replace(/"/g, '');
+      }
+
+      if (title === 'Ban') {
+        const ul = $(dl).nextAll('ul').first();
+        results.ban = ul.find('li i').first().text().trim().replace(/"/g, '');
       }
     });
 
-    quoteText = quoteText.trim().replace(/"/g, '');
-    await saveChampionQuoteToDB(champion.id, quoteText);
+    // todo: also just use the quotes from the original skin and not the others .. needs to be filtered somehow
+    // todo: filter out taunt and joke responses or handle them in the right way
+    // scrape taunt quotes (use nextUntil to grab the right section)
+    const tauntSection = $('h2 span#Taunt').closest('h2');
+    if (tauntSection.length > 0) {
+      const tauntQuotes: string[] = [];
+      tauntSection
+        .nextUntil('h2')
+        .find('ul li i')
+        .each((i, el) => {
+          let quoteText = $(el).text().trim();
+          if (quoteText) tauntQuotes.push(quoteText);
+        });
+      if (tauntQuotes.length > 0) {
+        // remove duplicates
+        results.taunt = [...new Set(tauntQuotes)].map((quote) =>
+          quote.replace(/"/g, ''),
+        );
+      }
+    }
+
+    // scrape joke quotes
+    const jokeSection = $('h2 span#Joke').closest('h2');
+    if (jokeSection.length > 0) {
+      const jokeQuotes: string[] = [];
+      jokeSection
+        .nextUntil('h2')
+        .find('ul li i')
+        .each((i, el) => {
+          let quoteText = $(el).text().trim();
+          if (quoteText) jokeQuotes.push(quoteText);
+        });
+      if (jokeQuotes.length > 0) {
+        results.joke = [...new Set(jokeQuotes)].map((quote) =>
+          quote.replace(/"/g, ''),
+        );
+      }
+    }
+
+    if (champion.name === 'Graves') {
+      console.log(results);
+    }
+
+    for (const [type, quotes] of Object.entries(results)) {
+      if (quotes) {
+        if (Array.isArray(quotes)) {
+          // multiple quotes (joke, taunt)
+          for (const quote of quotes) {
+            await saveChampionQuoteToDB(champion.id, quote);
+          }
+        } else {
+          // single quote (pick, ban)
+          await saveChampionQuoteToDB(champion.id, quotes);
+        }
+      }
+    }
   } catch (error) {
     console.error(`Error scraping quote for ${champion.name}`);
   }
@@ -111,6 +187,7 @@ const saveChampionQuoteToDB = async (championId: number, quote: string) => {
   const client = await pool.connect();
   try {
     await client.query(
+      //'INSERT INTO quotes(champion_id, quote) VALUES($1, $2) ON CONFLICT (quote) DO NOTHING',
       'INSERT INTO quotes(champion_id, quote) VALUES($1, $2)',
       [championId, quote],
     );
