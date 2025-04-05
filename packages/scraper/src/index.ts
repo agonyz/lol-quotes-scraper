@@ -1,6 +1,12 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { pool } from './utils/db';
+import { pool } from './utils/db.util';
+import {
+  scrapeBanQuote,
+  scrapeJokeQuotes,
+  scrapePickQuote,
+  scrapeTauntQuotes,
+} from './utils/quoteScraper.util';
 
 interface Champion {
   id: number;
@@ -13,6 +19,7 @@ const scrapeChampions = async () => {
     await saveChampionsToDB(champions);
     const championsFromDB = await getChampionsFromDB();
     await scrapeAndSaveQuotes(championsFromDB);
+
     console.log('Scraping completed and data saved to the database.');
   } catch (error) {
     console.error('Error during scraping:', error);
@@ -81,40 +88,80 @@ const scrapeChampionQuotes = async (champion: Champion) => {
   try {
     let championAudioUrl = `https://leagueoflegends.fandom.com/wiki/${champion.name}/LoL/Audio`;
     if (champion.name === 'Nunu & Willump') {
-      championAudioUrl = `https://leagueoflegends.fandom.com/wiki/nunu/LoL/Audio`;
+      championAudioUrl = `https://leagueoflegends.fandom.com/wiki/nunu/LoL/Audio#Classic`;
     }
     const { data } = await axios.get(championAudioUrl);
-    const $ = cheerio.load(data);
+    const $ = cheerio.load(data as string);
 
-    // only gather the pick quote for now
-    // looks a bit complicated, but would otherwise not work due to quotes like kindred's
-    const quoteElement = $('ul li i').eq(1).parent();
-    let quoteText = '';
-    quoteElement.children().each((i, e) => {
-      const tagName = $(e).get(0).tagName.toLowerCase();
-      if (tagName === 'sup') return;
+    const results: {
+      pick?: string;
+      ban?: string;
+      joke?: string[];
+      taunt?: string[];
+    } = {};
 
-      if (i > 0) {
-        let text = $(e).text().trim();
-        quoteText += text + ' ';
-      }
+    // scrape the pick and ban quotes
+    $('dl').each((i, dl) => {
+      const pickQuote = scrapePickQuote($, dl);
+      if (pickQuote) results.pick = pickQuote;
+
+      const banQuote = scrapeBanQuote($, dl);
+      if (banQuote) results.ban = banQuote;
     });
 
-    quoteText = quoteText.trim().replace(/"/g, '');
-    await saveChampionQuoteToDB(champion.id, quoteText);
+    // scrape taunt and joke quotes
+    const tauntQuotes = scrapeTauntQuotes($);
+    if (tauntQuotes) results.taunt = tauntQuotes;
+
+    const jokeQuotes = scrapeJokeQuotes($);
+    if (jokeQuotes) results.joke = jokeQuotes;
+
+    // save quotes to the DB
+    for (const [type, quotes] of Object.entries(results)) {
+      if (quotes) {
+        if (Array.isArray(quotes)) {
+          // multiple quotes (joke, taunt)
+          for (const quote of quotes) {
+            await saveChampionQuoteToDB(champion.id, quote, type);
+          }
+        } else {
+          // single quote (pick, ban)
+          await saveChampionQuoteToDB(champion.id, quotes, type);
+        }
+      }
+    }
   } catch (error) {
     console.error(`Error scraping quote for ${champion.name}`);
   }
 };
 
-const saveChampionQuoteToDB = async (championId: number, quote: string) => {
+const saveChampionQuoteToDB = async (
+  championId: number,
+  quote: string,
+  quoteType: string,
+) => {
   const client = await pool.connect();
   try {
-    await client.query(
-      'INSERT INTO quotes(champion_id, quote) VALUES($1, $2)',
-      [championId, quote],
+    // get the quote_type_id for the quoteType
+    const result = await client.query(
+      'SELECT id FROM quote_types WHERE type_name = $1 LIMIT 1',
+      [quoteType],
     );
-    console.log(`Quote saved for champion ID ${championId}`);
+    const quoteTypeId = result.rows[0]?.id;
+
+    if (!quoteTypeId) {
+      console.error(`Invalid quote type: ${quoteType}`);
+      return;
+    }
+
+    await client.query(
+      //'INSERT INTO quotes(champion_id, quote, quote_type_id) VALUES($1, $2, $3) ON CONFLICT (quote)', this will fail due to some quotes being doubled -> need to find a solution
+      'INSERT INTO quotes(champion_id, quote, quote_type_id) VALUES($1, $2, $3) ON CONFLICT (quote) DO NOTHING',
+      [championId, quote, quoteTypeId],
+    );
+    console.log(
+      `Quote saved for champion ID ${championId} with type ${quoteType}`,
+    );
   } catch (error) {
     console.error(`Error saving quote for champion ID ${championId}:`, error);
   } finally {
